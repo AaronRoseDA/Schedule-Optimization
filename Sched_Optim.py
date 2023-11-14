@@ -83,7 +83,7 @@ def sub5000_sched(df, data, i):
     dry_clean_reset = df[0,15]
     wet_clean_reset = df[0,16] 
 
-    if (clean_group == 'A') & (next_item_group == clean_group):
+    if (clean_group == next_item_group) & (clean_group != 'C'):
         total_time = (["{} - Setup - {} - {}".format(clean_group, item_no, prod_no)] * setup_time +
                       ["{} - Milling - {} - {}".format(clean_group, item_no, prod_no)] * milling_time +
                       ["{} - Mixing - {} - {}".format(clean_group, item_no, prod_no)] * mixing_time +
@@ -92,7 +92,7 @@ def sub5000_sched(df, data, i):
                       ["{} - Dry Clean teardown - {} - {}".format(clean_group, item_no, prod_no)] * dry_clean_reset)
 
         return total_time
-    if (clean_group != 'A') | (next_item_group != clean_group):
+    if (clean_group == 'C') | (clean_group != next_item_group):
         total_time = (["{} - Setup - {} - {}".format(clean_group, item_no, prod_no)] * setup_time + 
                       ["{} - Milling - {} - {}".format(clean_group, item_no, prod_no)] * milling_time +
                       ["{} - Mixing - {} - {}".format(clean_group, item_no, prod_no)] * mixing_time +
@@ -168,7 +168,7 @@ def sup5000_sched(df, data, i):
     def create_schedule(clean_group, prefix, item_no, prod_no, duration):
         return [f"{clean_group} - {prefix} - {item_no} - {prod_no}"] * duration
 
-    if (clean_group == 'A') & (next_item_group == 'A'):
+    if (clean_group != 'C') & (next_item_group == clean_group):
         mixing_room_total_time.extend(create_schedule(clean_group,"Setup", item_no, prod_no, setup_time))
         mixing_room_total_time.extend(create_schedule(clean_group,"Waiting - Milling", item_no, prod_no, milling_time))
         mixing_room_total_time.extend(create_schedule(clean_group,"Mixing", item_no, prod_no, mixing_time))
@@ -176,14 +176,14 @@ def sup5000_sched(df, data, i):
         mixing_room_total_time.extend(create_schedule(clean_group,"Dry Clean", item_no, prod_no, dry_clean_time))
         mixing_room_total_time.extend(create_schedule(clean_group,"Dry Clean teardown", item_no, prod_no, dry_clean_reset))
 
-    if (clean_group == 'A') & (next_mill_group == 'A'):
+    if (clean_group != 'C') & (next_mill_group == clean_group):
         milling_room_total_time.extend(create_schedule(clean_group,"Setup", item_no, prod_no, setup_time))
         milling_room_total_time.extend(create_schedule(clean_group,"Milling", item_no, prod_no, milling_time))
         milling_room_total_time.extend(create_schedule(clean_group,"Dry Clean Setup", item_no, prod_no, dry_clean_setup_time))
         milling_room_total_time.extend(create_schedule(clean_group,"Dry Clean", item_no, prod_no, dry_clean_time))
         milling_room_total_time.extend(create_schedule(clean_group,"Dry Clean teardown", item_no, prod_no, dry_clean_reset))
 
-    if (clean_group == 'C') | (next_item_group != 'A'):
+    if (clean_group == 'C') | (next_item_group != clean_group):
         mixing_room_total_time.extend(create_schedule(clean_group,"Setup", item_no, prod_no, setup_time))
         mixing_room_total_time.extend(create_schedule(clean_group,"Waiting - Milling", item_no, prod_no, milling_time))
         mixing_room_total_time.extend(create_schedule(clean_group,"Mixing", item_no, prod_no, mixing_time))
@@ -192,7 +192,7 @@ def sup5000_sched(df, data, i):
         mixing_room_total_time.extend(create_schedule(clean_group,"Drying", item_no, prod_no, 90))  # Assuming 90 represents drying time
         mixing_room_total_time.extend(create_schedule(clean_group,"Wet Clean teardown", item_no, prod_no, wet_clean_reset))
 
-    if (clean_group == 'C') | (next_mill_group != 'A'):
+    if (clean_group == 'C') | (next_mill_group != clean_group):
         milling_room_total_time.extend(create_schedule(clean_group,"Setup", item_no, prod_no, setup_time))
         milling_room_total_time.extend(create_schedule(clean_group,"Milling", item_no, prod_no, milling_time))
         milling_room_total_time.extend(create_schedule(clean_group,"Wet Clean Setup", item_no, prod_no, wet_clean_setup_time))
@@ -302,11 +302,11 @@ data = prep_data(DATA_MASTER)
 best_batch_count = 0
 best_active_minutes = 0
 best_room_schedule = create_empty_room_schedule()
-must_run = ['394742', '397001', '399332']
+#must_run = ['394742']
 run_time = []
 
 nrow = len(data)
-nruns = 10000
+nruns = 1000
 i_run_time = 0
 variable_time = 0 
 next_room_time = 0
@@ -314,7 +314,7 @@ create_vector_time = 0
 sub_5k_time = 0
 sup_5k_time = 0
 outer_loop_time = 0
-
+total_run_time = time.time()
 
 
 for ii in range(nruns):
@@ -499,15 +499,21 @@ for ii in range(nruns):
         best_batch_count = batch_count
         best_active_minutes = active_minutes
         best_room_schedule = room_schedule.copy()
+        createGraph(best_room_schedule)
 
-    
-print(i_run_time)
-print(variable_time)
-print(create_vector_time)
-print(sub_5k_time)
-print(sup_5k_time)
-print(outer_loop_time)
+print(f"""
+========================================
+              Run Summary
+========================================
+- Total Runtime: {time.time() - total_run_time:.2f} seconds
+- Inner Loop Runtime: {i_run_time:.2f} seconds
+- Inner Loop Variable Creation Time: {variable_time:.2f} seconds
+- Create Schedule Pieces Time: {create_vector_time:.2f} seconds
+- Sub 5K Function Runtime: {sub_5k_time:.2f} seconds
+- 5K+ Function Runtime: {sup_5k_time:.2f} seconds
+========================================
+""")
 
-createGraph(best_room_schedule)
+#createGraph(best_room_schedule)
 #end
 
