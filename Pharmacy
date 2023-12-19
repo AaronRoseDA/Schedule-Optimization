@@ -1,0 +1,338 @@
+"""
+Created on Wed Dec 13 12:58:27 2023
+@author: arose
+"""
+import pandas as pd
+import numpy as np
+import datetime
+import time
+import random
+
+def create_empty_room_schedule():
+    base_time = datetime.datetime.strptime("04:00:00", "%H:%M:%S")
+    time_list = [(base_time + datetime.timedelta(minutes=x)).strftime("%H:%M") for x in range(20 * 60)]
+    
+    # Create a DataFrame with the time list and other columns initialized to 'Idle'
+    room_schedule = pd.DataFrame({
+        'time': time_list,
+        'Form_A': 'Idle',
+        'Form_B': 'Idle',
+        'Form_C': 'Idle'
+    })
+    
+    return room_schedule;
+
+def prep_data(df):
+    #df = DATA_MASTER
+    df = df.copy()
+    forms = ['Form_A', 'Form_B', 'Form_C']
+    df['FormRoom'] = [random.choice(forms) for _ in range(len(df))]
+    
+    n_rows = len(df)
+    run_order = np.random.permutation(n_rows) + 1  # Create a random permutation of numbers from 1 to n_rows
+    df['RunOrder'] = run_order
+    df = df.sort_values(by = 'RunOrder')
+    
+    return df
+
+ #df = DATA_MASTER
+    df = prep_data(df)
+    POs_ran = 0
+    dry_cleans = 0
+    room_schedule = create_empty_room_schedule()
+    rooms = ['Form_A', 'Form_B', 'Form_C']
+    for room in rooms:
+        df_temp = df.loc[df['FormRoom'] == room]
+        
+        for runs in range(len(df_temp.index)):
+            #print(runs)
+            
+            clean_group = df_temp.iloc[runs,22]
+            if runs + 1 < len(df_temp.index):
+                next_clean_group = df_temp.iloc[runs + 1, 22]
+            else:
+                next_clean_group = None
+            
+            item_no = df_temp.iloc[runs,5]
+            if runs + 1 < len(df_temp.index):
+                next_item_no = df_temp.iloc[runs + 1, 5]
+            else:
+                next_item_no = None
+                
+            sub_group = df_temp.iloc[runs,25]
+            if runs + 1 < len(df_temp.index):
+                next_sub_group = df_temp.iloc[runs + 1, 25]
+            else:
+                next_sub_group = None
+             
+            prod_no = df_temp.iloc[runs,4]
+            setup_time = int(df_temp.iloc[runs,10])
+            form_time = int(df_temp.iloc[runs,11])
+            dry_clean_setup_time = df_temp.iloc[runs,18]
+            wet_clean_setup_time = df_temp.iloc[runs,19]
+            dry_clean_time = df_temp.iloc[runs,14]
+            wet_clean_time = df_temp.iloc[runs,15]
+            dry_clean_reset = df_temp.iloc[runs,16]
+            wet_clean_reset = df_temp.iloc[runs,17] 
+            
+            if ((clean_group == next_clean_group) and (sub_group == next_sub_group) and (sub_group != 1)) or \
+                (item_no == next_item_no):
+                total_time = (["{} - Setup - {} - {}".format(clean_group, item_no, prod_no)] * setup_time +
+                              ["{} - Formulation - {} - {}".format(clean_group, item_no, prod_no)] * form_time +
+                              ["{} - Dry Clean Setup - {} - {}".format(clean_group, item_no, prod_no)] * dry_clean_setup_time +
+                              ["{} - Dry Clean - {} - {}".format(clean_group, item_no, prod_no)] * dry_clean_time +
+                              ["{} - Dry Clean teardown - {} - {}".format(clean_group, item_no, prod_no)] * dry_clean_reset)  
+                #print('Dry clean')
+                dry_clean = True
+            else:
+                total_time = (["{} - Setup - {} - {}".format(clean_group, item_no, prod_no)] * setup_time +
+                              ["{} - Formulation - {} - {}".format(clean_group, item_no, prod_no)] * form_time +
+                              ["{} - wet Clean Setup - {} - {}".format(clean_group, item_no, prod_no)] * wet_clean_setup_time +
+                              ["{} - wet Clean - {} - {}".format(clean_group, item_no, prod_no)] * wet_clean_time +
+                              ["{} - Drying - {} - {}".format(clean_group, item_no, prod_no)] * 90 +
+                              ["{} - wet Clean teardown - {} - {}".format(clean_group, item_no, prod_no)] * wet_clean_reset)
+                dry_clean = False
+                
+            first_idle_time = (room_schedule[room] == 'Idle').idxmax()
+            
+            if (len(room_schedule) - first_idle_time) > len(total_time):
+                room_schedule.loc[first_idle_time:first_idle_time + len(total_time) - 1, room] = total_time
+                POs_ran += 1
+                if dry_clean:
+                    dry_cleans =+ 1
+                
+    return room_schedule, POs_ran, dry_cleans
+
+def create_wet_dry_array():
+    df = pd.read_excel('C:/Users/arose/OneDrive - Ortho Molecular Products/Desktop/Schedule_Optimization/CurrentFormulations.xlsx', sheet_name='Pharmacy')
+
+    clean_times = {}
+    for runs in range(len(df.index)):
+        #print(runs)
+        
+        clean_group = df.iloc[runs,22]
+        item_no = df.iloc[runs,5]
+        prod_no = df.iloc[runs,4]
+        setup_time = int(df.iloc[runs,10])
+        form_time = int(df.iloc[runs,11])
+        dry_clean_setup_time = df.iloc[runs,18]
+        wet_clean_setup_time = df.iloc[runs,19]
+        dry_clean_time = df.iloc[runs,14]
+        wet_clean_time = df.iloc[runs,15]
+        dry_clean_reset = df.iloc[runs,16]
+        wet_clean_reset = df.iloc[runs,17]
+        
+
+        dry_time = (["{} - Setup - {} - {}".format(clean_group, item_no, prod_no)] * setup_time +
+                      ["{} - Formulation - {} - {}".format(clean_group, item_no, prod_no)] * form_time +
+                      ["{} - Dry Clean Setup - {} - {}".format(clean_group, item_no, prod_no)] * dry_clean_setup_time +
+                      ["{} - Dry Clean - {} - {}".format(clean_group, item_no, prod_no)] * dry_clean_time +
+                      ["{} - Dry Clean teardown - {} - {}".format(clean_group, item_no, prod_no)] * dry_clean_reset)  
+
+        wet_time = (["{} - Setup - {} - {}".format(clean_group, item_no, prod_no)] * setup_time +
+                      ["{} - Formulation - {} - {}".format(clean_group, item_no, prod_no)] * form_time +
+                      ["{} - wet Clean Setup - {} - {}".format(clean_group, item_no, prod_no)] * wet_clean_setup_time +
+                      ["{} - wet Clean - {} - {}".format(clean_group, item_no, prod_no)] * wet_clean_time +
+                      ["{} - Drying - {} - {}".format(clean_group, item_no, prod_no)] * 90 +
+                      ["{} - wet Clean teardown - {} - {}".format(clean_group, item_no, prod_no)] * wet_clean_reset)
+
+        clean_times[(runs, 'dry_clean')] = dry_time
+        clean_times[(runs, 'wet_clean')] = wet_time
+        
+    return clean_times
+    
+def create_schedule(df, clean_times, room_schedule):
+    
+    #df = DATA_MASTER.copy()
+    #room_schedule = create_empty_room_schedule()
+    
+    df = df.copy()
+    df = prep_data(df)
+    
+    
+    POs_ran = 0
+    dry_cleans = 0
+    rooms = ['Form_A', 'Form_B', 'Form_C']
+    for room in rooms:
+        df_temp = df.loc[df['FormRoom'] == room]
+        
+        for runs in range(len(df_temp.index)):
+
+            clean_group = df_temp.iloc[runs,22]
+            if runs + 1 < len(df_temp.index):
+                next_clean_group = df_temp.iloc[runs + 1, 22]
+            else:
+                next_clean_group = None
+            
+            item_no = df_temp.iloc[runs,5]
+            if runs + 1 < len(df_temp.index):
+                next_item_no = df_temp.iloc[runs + 1, 5]
+            else:
+                next_item_no = None
+                
+            sub_group = df_temp.iloc[runs,23]
+            if runs + 1 < len(df_temp.index):
+                next_sub_group = df_temp.iloc[runs + 1, 23]
+            else:
+                next_sub_group = None
+             
+            
+            if ((clean_group == next_clean_group) and (sub_group == next_sub_group) and (sub_group != 1)) or \
+                (item_no == next_item_no):
+                total_time = clean_times[(df_temp.index[runs], 'dry_clean')]
+                dry_clean = True
+            else:
+                total_time = clean_times[(df_temp.index[runs], 'wet_clean')]
+                dry_clean = False
+            
+            room_schedule = room_schedule.copy()
+            first_idle_time = (room_schedule[room] == 'Idle').idxmax()
+            
+            if (len(room_schedule) - first_idle_time) > len(total_time):
+                room_schedule.loc[first_idle_time:first_idle_time + len(total_time) - 1, room] = total_time
+                POs_ran += 1
+                if dry_clean:
+                    dry_cleans = dry_cleans + 1
+                
+    return room_schedule, POs_ran, dry_cleans
+
+    
+def run_scheduler():
+    ST = time.time()
+    max_POs_Ran = 0 
+    max_dry_cleans = 0
+    DATA_MASTER = pd.read_excel('C:/Users/arose/OneDrive - Ortho Molecular Products/Desktop/Schedule_Optimization/CurrentFormulations.xlsx', sheet_name='Pharmacy')
+    DATA_MASTER = DATA_MASTER.sort_values(by='Start Date')
+    DATA_MASTER = DATA_MASTER.reset_index(drop=True)
+
+    #DATA_MASTER = DATA_MASTER[DATA_MASTER['Group'] == 'A']
+    clean_times = create_wet_dry_array()
+    ROOM_SCHEDULE_MASTER = create_empty_room_schedule()
+    POs_ran = 0
+    most_POs_ran = 0
+    for PO in range(len(DATA_MASTER.index)):
+        if POs_ran + 1 == PO:
+            df = DATA_MASTER.copy()
+            df = df.iloc[0:PO]
+            POs_ran = 0
+            iters = 0
+            while POs_ran < PO and iters < 1000:
+                room_sched, POs_ran, dry_cleans = create_schedule(df, clean_times, ROOM_SCHEDULE_MASTER)
+                iters = iters+1
+        print(POs_ran)
+        if POs_ran > most_POs_ran:
+            most_POs_ran = POs_ran        
+    
+    df = DATA_MASTER.iloc[0:most_POs_ran].copy()
+    
+    for runs in range(10000):
+        room_sched, POs_ran, dry_cleans = create_schedule(df, clean_times, ROOM_SCHEDULE_MASTER)
+        if (POs_ran > max_POs_Ran) or (POs_ran >= max_POs_Ran and dry_cleans > max_dry_cleans) :
+            max_POs_Ran = POs_ran
+            max_dry_cleans = dry_cleans
+            best_sched = room_sched
+
+        if room_sched.equals(best_sched):
+            print('Same')
+
+    run_details = f"Done... POs ran: {max_POs_Ran}, Dry Cleans: {max_dry_cleans}"
+    run_time = f"Run time: {time.time() - ST:.2f} seconds"
+
+    print(run_details)
+    return(best_sched, run_details, run_time)
+
+schedule, details, runTime = run_scheduler()
+
+
+
+def createGraph(df):
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    from datetime import datetime, timedelta
+    # Assuming best_room_schedule is defined and populated elsewhere
+    #df = best_room_schedule
+    df['time'] = pd.to_datetime(df['time'], format='%H:%M')
+    # Pivot the DataFrame
+    df_long = df.melt(id_vars='time', var_name='Room', value_name='Operation')
+    
+    # Group by Operation and Room, and summarize to get the start and end time of each Operation
+    df_summarized = (
+        df_long.groupby(['Operation', 'Room'])
+        .agg(start_time=('time', 'min'), end_time=('time', 'max'))
+        .reset_index()
+    )
+    # Add 60 seconds to end_time
+    df_summarized['end_time'] = df_summarized['end_time'] + timedelta(seconds=60)
+    # Add mid_time and form_room
+    df_summarized['mid_time'] = df_summarized['start_time'] + (df_summarized['end_time'] - df_summarized['start_time']) / 2
+    df_summarized['form_room'] = df_summarized['Room'].map({'Form_A': 1, 'Form_B': 2, 'Form_C': 3})
+    # Sort values
+    df_summarized = df_summarized.sort_values(['form_room', 'start_time'], ascending=[True, True])
+    # Reset the index after all transformations
+    df_summarized.reset_index(drop=True, inplace=True)
+    df_summarized['PO'] = df_summarized['Operation'].str[-6:]
+
+
+    def color_mapping(df):
+        df = df_summarized
+        df['color'] = 'blue'
+        import random
+        def generate_hex_color():
+            # Generate a random color by generating a random number between 0x0 and 0xFFFFFF
+            # and then converting it to a hex string.
+            return "#{:06x}".format(random.randint(0, 0xFFFFFF))
+        
+        # Generate and print a random hex color code
+        generate_hex_color()
+        df['PO'].unique()
+        for i in df['PO'].unique():
+            df.loc[df['PO'] == i, 'color'] = generate_hex_color()
+        return(df)
+      
+    df_summarized = color_mapping(df_summarized)
+            
+
+        
+    #df_summarized = df_summarized
+    
+    fig, ax = plt.subplots(figsize=(20,16))
+    # Create a Gantt chart with vertical bars
+    for i, task in df_summarized.iterrows():
+        #print(task['end_time'] - task['start_time'] )
+        ax.bar(x = task['form_room'],  # x-axis - Room position
+               height = (task['end_time'] - task['start_time']),  # Bar height - Duration
+               bottom = task['start_time'],  # Start time for the bottom of the bar
+               width=0.8,  # Bar width
+               align='center',
+               color = task['color'],
+               #color='skyblue',
+               edgecolor='black')
+        ax.text(task['form_room'],  # x-axis - Room position
+                task['mid_time'],  # Mid time for text position
+                task['Operation'],  # The text inside the bar
+                va='center',  # Vertical alignment
+                ha='center',  # Horizontal alignment
+                color='black')
+    start_time = mdates.date2num(datetime.strptime("00:00:00", "%H:%M:%S"))
+    end_time = mdates.date2num(datetime.strptime("04:00:00", "%H:%M:%S")) 
+    start_time = -25566.833333333332  # Corresponds to 1900-01-01 04:00:00
+    end_time = -25566.0 
+    
+    ax.set_ylim(start_time, end_time)
+    # Set the x-ticks to room names
+    room_ticks = df_summarized['form_room'].unique()
+    ax.set_xticks(room_ticks)
+    ax.set_xticklabels(df_summarized['Room'].unique())
+    # Format the y-ticks as dates
+    ax.yaxis_date()
+    ax.yaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+    ax.yaxis.set_major_locator(mdates.MinuteLocator(byminute=[0, 30]))  # Only show labels every half hour
+    #ax.xaxis.set_major_locator(mdates.HourLocator(byhour=[0,1]))
+    # Labeling Axes
+    ax.set_xlabel('Room')
+    ax.set_ylabel('Time')
+    ax.set_title('Gantt Chart')
+    plt.tight_layout()
+    plt.show()
+
+createGraph(schedule)
